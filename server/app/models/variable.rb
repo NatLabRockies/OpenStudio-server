@@ -58,7 +58,7 @@ class Variable
     
   # Relationships
   belongs_to :analysis, index: true
-  belongs_to :measure, optional: true
+  belongs_to :measure, optional: true, index: true
   has_many :preflight_images, dependent: :destroy
 
   # Indexes
