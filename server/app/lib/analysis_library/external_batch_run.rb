@@ -20,7 +20,9 @@ class AnalysisLibrary::ExternalBatchRun < AnalysisLibrary::Base
       run_data_point_filename: 'run_openstudio.rb',
       problem: {},
       dps_per_chunk: nil,
-      sleep_interval: 5
+      sleep_interval: 5,
+      auto_dispatch: false,
+      step_functions_arn: ENV['AWS_STEP_FUNCTIONS_ARN']
     )
     @options = defaults.deep_merge(options)
 
@@ -53,6 +55,23 @@ class AnalysisLibrary::ExternalBatchRun < AnalysisLibrary::Base
 
     manifest = JSON.parse(File.read(ExternalBatch.manifest_path(@analysis.id)))
     total_chunks = manifest['chunks'].size
+
+    # Auto-dispatch to AWS Step Functions if configured
+    sfn_arn = @options[:step_functions_arn] || ENV['AWS_STEP_FUNCTIONS_ARN']
+    if sfn_arn.present? && @options[:auto_dispatch]
+      submit_script = File.expand_path('../../../external_batch/aws/submit_batch.rb', __dir__)
+      batch_dir = ExternalBatch.batch_dir(@analysis.id)
+      bucket = @options[:bucket] || ENV['AWS_BATCH_BUCKET']
+      job_queue = @options[:job_queue] || ENV['AWS_BATCH_JOB_QUEUE']
+      job_def = @options[:job_definition] || ENV['AWS_BATCH_JOB_DEF']
+      region = @options[:region] || ENV['AWS_REGION'] || 'us-east-1'
+
+      if bucket.present? && job_queue.present? && job_def.present?
+        cmd = "#{RbConfig.ruby} \"#{submit_script}\" \"#{batch_dir}\" --bucket \"#{bucket}\" --job-queue \"#{job_queue}\" --job-definition \"#{job_def}\" --step-functions \"#{sfn_arn}\" --region \"#{region}\""
+        logger.info "Auto-dispatching external batch to Step Functions: #{cmd}"
+        system(cmd)
+      end
+    end
     ingester = ExternalBatch::Ingester.new(@analysis, logger: logger)
 
     # Watch the results directory until all the datapoints are terminal. Analysis

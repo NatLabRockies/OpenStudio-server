@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenStudio External Batch Viewer</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --queued: #64748b;
+      --modal-bg: rgba(15, 23, 42, 0.85);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1300px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .title-group h1 {
+      font-size: 24px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-weight: 600;
+      background: #334155;
+      color: #38bdf8;
+      border: 1px solid #475569;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      background-color: var(--primary);
+      color: #0f172a;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background-color: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background-color: #334155;
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background-color: #475569;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .stat-value.success { color: var(--success); }
+    .stat-value.danger { color: var(--danger); }
+    .stat-value.warning { color: var(--warning); }
+    .stat-value.primary { color: var(--primary); }
+
+    .progress-section {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 18px;
+      margin-bottom: 24px;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .progress-bar-container {
+      height: 20px;
+      background-color: #334155;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .progress-segment {
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+
+    .progress-success { background-color: var(--success); }
+    .progress-danger { background-color: var(--danger); }
+    .progress-running { background-color: var(--warning); }
+
+    .progress-legend {
+      display: flex;
+      gap: 16px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+
+    .data-section {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .table-toolbar {
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--card-border);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .search-box {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      width: 280px;
+      outline: none;
+    }
+
+    .search-box:focus {
+      border-color: var(--primary);
+    }
+
+    .filters {
+      display: flex;
+      gap: 8px;
+    }
+
+    .filter-btn {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .filter-btn.active {
+      background: var(--primary);
+      color: #0f172a;
+      font-weight: 600;
+      border-color: var(--primary);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th {
+      background-color: rgba(15, 23, 42, 0.6);
+      padding: 12px 16px;
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+    }
+
+    tr:hover {
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    .status-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+
+    .status-completed { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .status-failed { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .status-queued { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+    .status-running { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--modal-bg);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      width: 96vw;
+      max-width: 1350px;
+      height: 94vh;
+      max-height: 94vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--card-border);
+      background: #151e2e;
+      padding: 0 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .modal-tabs {
+      display: flex;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      padding: 10px 18px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+    }
+
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      background: var(--card-bg);
+    }
+
+    .modal-search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+    }
+
+    .modal-search-input {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      width: 260px;
+      outline: none;
+    }
+
+    .modal-search-input:focus {
+      border-color: var(--primary);
+    }
+
+    .btn-icon {
+      padding: 4px 8px;
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    mark.search-highlight {
+      background-color: #f59e0b;
+      color: #0f172a;
+      border-radius: 2px;
+      padding: 0 2px;
+    }
+
+    mark.search-highlight.active {
+      background-color: #38bdf8;
+      color: #0f172a;
+      outline: 2px solid #fff;
+    }
+
+    .modal-body {
+      padding: 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    pre.log-viewer {
+      background: #090d16;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 14px;
+      color: #e2e8f0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre;
+      word-break: normal;
+      overflow-wrap: normal;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: auto;
+    }
+
+    pre.log-viewer.wrap {
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+    }
+
+    pre.log-viewer::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    pre.log-viewer::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    pre.log-viewer::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    pre.log-viewer::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .close-btn:hover {
+      color: var(--text);
+    }
+
+    .dropzone {
+      border: 2px dashed var(--card-border);
+      border-radius: 8px;
+      padding: 36px;
+      text-align: center;
+      margin-bottom: 24px;
+      background: rgba(30, 41, 59, 0.4);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .dropzone:hover {
+      border-color: var(--primary);
+      background: rgba(30, 41, 59, 0.7);
+    }
+
+    .empty-state {
+      padding: 48px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title-group">
+        <h1>
+          OpenStudio Batch Results Viewer
+          <span class="badge">Headless / S3 / Local</span>
+        </h1>
+        <div class="subtitle" id="analysisSubtitle">No results directory loaded. Click "Select Directory" to load batch results.</div>
+      </div>
+      <div class="controls">
+        <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;" />
+        <button class="btn" id="selectDirBtn">📂 Select Results Directory</button>
+        <button class="btn btn-secondary" id="refreshBtn" title="Re-scan directory">🔄 Refresh</button>
+      </div>
+    </header>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">Total Datapoints</span>
+        <span class="stat-value primary" id="statTotal">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Completed (Succeeded)</span>
+        <span class="stat-value success" id="statSuccess">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Failed / Errored</span>
+        <span class="stat-value danger" id="statFailed">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Pending / In Progress</span>
+        <span class="stat-value warning" id="statPending">0</span>
+      </div>
+    </div>
+
+    <div class="progress-section">
+      <div class="progress-header">
+        <span>Simulation Progress</span>
+        <span id="progressPercent">0%</span>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-segment progress-success" id="progressSuccess" style="width: 0%"></div>
+        <div class="progress-segment progress-danger" id="progressDanger" style="width: 0%"></div>
+        <div class="progress-segment progress-running" id="progressPending" style="width: 0%"></div>
+      </div>
+      <div class="progress-legend">
+        <div class="legend-item"><div class="legend-color" style="background: var(--success);"></div> Succeeded</div>
+        <div class="legend-item"><div class="legend-color" style="background: var(--danger);"></div> Failed</div>
+        <div class="legend-item"><div class="legend-color" style="background: #334155;"></div> Remaining</div>
+      </div>
+    </div>
+
+    <div class="data-section">
+      <div class="table-toolbar">
+        <input type="text" class="search-box" id="searchInput" placeholder="Search by Datapoint ID or Host..." />
+        <div class="filters">
+          <button class="filter-btn active" data-filter="all">All (<span id="countAll">0</span>)</button>
+          <button class="filter-btn" data-filter="completed">Succeeded (<span id="countSuccess">0</span>)</button>
+          <button class="filter-btn" data-filter="failed">Failed (<span id="countFail">0</span>)</button>
+          <button class="filter-btn" data-filter="pending">Pending (<span id="countPending">0</span>)</button>
+        </div>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Datapoint ID</th>
+              <th>Status</th>
+              <th>Duration</th>
+              <th>Compute Host</th>
+              <th>Error Details</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="datapointsTableBody">
+            <tr>
+              <td colspan="6" class="empty-state">No simulation results loaded yet. Choose a batch results folder to begin.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log Viewer Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Datapoint Diagnostics</h3>
+        <button class="close-btn" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-nav">
+        <div class="modal-tabs">
+          <button class="tab-btn active" data-tab="status">status.json</button>
+          <button class="tab-btn" data-tab="runlog">run.log</button>
+          <button class="tab-btn" data-tab="out_osw">out.osw</button>
+          <button class="tab-btn" data-tab="measure_attrs">measure_attributes.json</button>
+          <button class="tab-btn" data-tab="oscli">oscli_simulation.log</button>
+        </div>
+        <div class="modal-search-bar">
+          <input type="text" class="modal-search-input" id="logSearchInput" placeholder="Find in log... (Press Enter)" />
+          <button class="btn btn-secondary" id="logSearchBtn" style="padding: 4px 10px; font-size: 12px; font-weight: 600;">Find</button>
+          <span id="logSearchMatchCount" style="font-size: 12px; color: var(--text-muted); min-width: 55px;"></span>
+          <button class="btn btn-secondary btn-icon" id="logSearchPrev" title="Previous match (Shift+Enter)">▲</button>
+          <button class="btn btn-secondary btn-icon" id="logSearchNext" title="Next match (Enter)">▼</button>
+          <label style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="filterLinesCheckbox" /> Filter lines
+          </label>
+          <button class="btn btn-secondary" id="wordWrapBtn" style="padding: 4px 10px; font-size: 12px; margin-left: 4px;" title="Toggle Word Wrap">Wrap: Off</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <pre class="log-viewer" id="logContent">Loading...</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let rawFiles = new Map(); // path -> File
+    let dirHandle = null;     // FileSystemDirectoryHandle if using Modern API
+    let datapoints = [];      // parsed datapoint objects
+    let activeFilter = 'all';
+    let searchQuery = '';
+    let currentSelectedDp = null;
+    let activeTab = 'status';
+
+    let currentRawLogText = '';
+    let currentMatchIndex = -1;
+
+    const selectBtn = document.getElementById('selectDirBtn');
+    const folderInput = document.getElementById('folderInput');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const searchInput = document.getElementById('searchInput');
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalClose = document.getElementById('modalClose');
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const logSearchInput = document.getElementById('logSearchInput');
+    const logSearchBtn = document.getElementById('logSearchBtn');
+    const logSearchMatchCount = document.getElementById('logSearchMatchCount');
+    const logSearchPrev = document.getElementById('logSearchPrev');
+    const logSearchNext = document.getElementById('logSearchNext');
+    const filterLinesCheckbox = document.getElementById('filterLinesCheckbox');
+    const wordWrapBtn = document.getElementById('wordWrapBtn');
+    let isWordWrap = false;
+
+    selectBtn.addEventListener('click', async () => {
+      if (window.showDirectoryPicker) {
+        try {
+          dirHandle = await window.showDirectoryPicker();
+          await scanDirectoryHandle(dirHandle);
+          return;
+        } catch (e) {
+          if (e.name !== 'AbortError') console.warn('Picker fallback:', e);
+        }
+      }
+      folderInput.click();
+    });
+
+    folderInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
+      rawFiles.clear();
+      for (const f of files) {
+        // webkitRelativePath format: "results/dp_id/status.json"
+        rawFiles.set(f.webkitRelativePath, f);
+      }
+      await processFiles();
+    });
+
+    refreshBtn.addEventListener('click', async () => {
+      if (dirHandle) {
+        await scanDirectoryHandle(dirHandle);
+      } else if (rawFiles.size > 0) {
+        await processFiles();
+      }
+    });
+
+    async function scanDirectoryHandle(handle) {
+      rawFiles.clear();
+      document.getElementById('analysisSubtitle').textContent = `Scanning: ${handle.name}...`;
+
+      async function readDir(entryHandle, path = '') {
+        for await (const [name, entry] of entryHandle.entries()) {
+          const entryPath = path ? `${path}/${name}` : name;
+          if (entry.kind === 'file') {
+            const file = await entry.getFile();
+            rawFiles.set(entryPath, file);
+          } else if (entry.kind === 'directory') {
+            await readDir(entry, entryPath);
+          }
+        }
+      }
+
+      await readDir(handle);
+      document.getElementById('analysisSubtitle').textContent = `Directory: ${handle.name} (${rawFiles.size} files)`;
+      await processFiles();
+    }
+
+    async function processFiles() {
+      // Find all status.json files or dp directories
+      const dpMap = new Map();
+
+      for (const [path, file] of rawFiles.entries()) {
+        const normalized = path.replace(/\\/g, '/');
+        const parts = normalized.split('/');
+
+        // Strip leading 'results' or 'package' if present
+        let relParts = (parts[0] === 'results' || parts[0] === 'package') ? parts.slice(1) : parts;
+        if (relParts.length < 2) continue; // Skip root-level files like chunk_0.done or aggregated_measure_attributes.csv
+
+        const dpId = relParts[0]; // Datapoint folder name
+        const filename = parts[parts.length - 1];
+
+        if (!dpMap.has(dpId)) {
+          dpMap.set(dpId, {
+            id: dpId,
+            status: 'queued',
+            duration: '-',
+            host: '-',
+            error: null,
+            files: new Map()
+          });
+        }
+        dpMap.get(dpId).files.set(filename, file);
+        dpMap.get(dpId).files.set(relParts.slice(1).join('/'), file);
+      }
+
+      // Parse status.json for each datapoint
+      const parsed = [];
+      for (const [dpId, dp] of dpMap.entries()) {
+        const statusFile = dp.files.get('status.json');
+        if (statusFile) {
+          try {
+            const text = await statusFile.text();
+            const json = JSON.parse(text);
+            const rawStatus = (json.completed_status || json.status || '').toLowerCase();
+            const exitStatus = (json.exit_status !== undefined) ? json.exit_status : json.exit_code;
+
+            if (rawStatus === 'success' || rawStatus === 'completed' || exitStatus === 0) {
+              dp.status = 'completed';
+            } else if (rawStatus === 'fail' || rawStatus === 'failed' || (exitStatus !== undefined && exitStatus !== 0)) {
+              dp.status = 'failed';
+              dp.error = json.error || `Exit status ${exitStatus}`;
+            } else {
+              dp.status = 'completed';
+            }
+
+            dp.host = json.hostname || json.host || 'aws-batch';
+            if (json.started_at && json.completed_at) {
+              const diffSec = Math.round((new Date(json.completed_at) - new Date(json.started_at)) / 1000);
+              dp.duration = diffSec > 0 ? `${diffSec}s` : '<1s';
+            }
+            dp.statusJson = json;
+          } catch (e) {
+            dp.status = 'failed';
+            dp.error = 'Invalid status.json';
+          }
+        }
+        parsed.push(dp);
+      }
+
+      datapoints = parsed.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+      updateUI();
+    }
+
+    function updateUI() {
+      const total = datapoints.length;
+      const succeeded = datapoints.filter(d => d.status === 'completed').length;
+      const failed = datapoints.filter(d => d.status === 'failed').length;
+      const pending = total - (succeeded + failed);
+
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statSuccess').textContent = succeeded;
+      document.getElementById('statFailed').textContent = failed;
+      document.getElementById('statPending').textContent = pending;
+
+      document.getElementById('countAll').textContent = total;
+      document.getElementById('countSuccess').textContent = succeeded;
+      document.getElementById('countFail').textContent = failed;
+      document.getElementById('countPending').textContent = pending;
+
+      const pctSuccess = total > 0 ? (succeeded / total) * 100 : 0;
+      const pctFailed = total > 0 ? (failed / total) * 100 : 0;
+      const pctPending = total > 0 ? (pending / total) * 100 : 0;
+
+      document.getElementById('progressSuccess').style.width = `${pctSuccess}%`;
+      document.getElementById('progressDanger').style.width = `${pctFailed}%`;
+      document.getElementById('progressPending').style.width = `${pctPending}%`;
+      document.getElementById('progressPercent').textContent = `${Math.round(pctSuccess + pctFailed)}% complete (${succeeded}/${total} passed)`;
+
+      renderTable();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('datapointsTableBody');
+      const filtered = datapoints.filter(d => {
+        if (activeFilter === 'completed' && d.status !== 'completed') return false;
+        if (activeFilter === 'failed' && d.status !== 'failed') return false;
+        if (activeFilter === 'pending' && (d.status === 'completed' || d.status === 'failed')) return false;
+
+        if (searchQuery) {
+          const matchId = d.id.toLowerCase().includes(searchQuery.toLowerCase());
+          const matchHost = (d.host || '').toLowerCase().includes(searchQuery.toLowerCase());
+          return matchId || matchHost;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No matching datapoints found.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(d => {
+        const statusClass = `status-${d.status}`;
+        const errorText = d.error ? `<span style="color: #f87171;">${escapeHtml(d.error)}</span>` : '<span style="color: #64748b;">—</span>';
+        return `
+          <tr>
+            <td class="mono"><strong>${escapeHtml(d.id)}</strong></td>
+            <td><span class="status-pill ${statusClass}">${d.status}</span></td>
+            <td>${d.duration}</td>
+            <td class="mono" style="color: #94a3b8;">${escapeHtml(d.host)}</td>
+            <td>${errorText}</td>
+            <td>
+              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="openDiagnostics('${escapeHtml(d.id)}')">
+                View Logs
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    window.openDiagnostics = async function(dpId) {
+      currentSelectedDp = datapoints.find(d => d.id === dpId);
+      if (!currentSelectedDp) return;
+      document.getElementById('modalTitle').textContent = `Datapoint Diagnostics: ${currentSelectedDp.id}`;
+      modalOverlay.style.display = 'flex';
+      await loadTabContent(activeTab);
+    };
+
+    modalClose.addEventListener('click', () => {
+      modalOverlay.style.display = 'none';
+    });
+
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) modalOverlay.style.display = 'none';
+    });
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeTab = btn.getAttribute('data-tab');
+        await loadTabContent(activeTab);
+      });
+    });
+
+    async function loadTabContent(tab) {
+      const viewer = document.getElementById('logContent');
+      if (!currentSelectedDp) return;
+
+      let filename = 'status.json';
+      if (tab === 'runlog') filename = 'run.log';
+      else if (tab === 'out_osw') filename = 'out.osw';
+      else if (tab === 'measure_attrs') filename = 'measure_attributes.json';
+      else if (tab === 'oscli') filename = 'oscli_simulation.log';
+
+      let file = currentSelectedDp.files.get(filename);
+      if (!file) {
+        for (const [k, f] of currentSelectedDp.files.entries()) {
+          if (k.endsWith('/' + filename) || k === filename) {
+            file = f;
+            break;
+          }
+        }
+      }
+      if (!file) {
+        viewer.textContent = `[File not found: ${filename} for datapoint ${currentSelectedDp.id}]`;
+        return;
+      }
+
+      viewer.textContent = 'Reading file...';
+      try {
+        let text = await file.text();
+        if (filename.endsWith('.json')) {
+          try {
+            text = JSON.stringify(JSON.parse(text), null, 2);
+          } catch {}
+        }
+        currentRawLogText = text;
+        logSearchInput.value = '';
+        logSearchMatchCount.textContent = '';
+        filterLinesCheckbox.checked = false;
+        lastSearchQuery = '';
+        matchMarks = [];
+        currentMatchIndex = -1;
+        viewer.classList.toggle('wrap', isWordWrap);
+        viewer.textContent = currentRawLogText;
+      } catch (err) {
+        viewer.textContent = `Error reading file: ${err.message}`;
+      }
+    }
+
+    let lastSearchQuery = '';
+    let lastSearchFilterMode = false;
+    let matchMarks = [];
+
+    function performLogSearch(direction = 0) {
+      const query = logSearchInput.value.trim();
+      const viewer = document.getElementById('logContent');
+      const isFilterMode = filterLinesCheckbox.checked;
+
+      if (!query) {
+        logSearchMatchCount.textContent = '';
+        viewer.textContent = currentRawLogText;
+        currentMatchIndex = -1;
+        lastSearchQuery = '';
+        matchMarks = [];
+        return;
+      }
+
+      // Fast path: if query & mode unchanged and we're navigating matches in highlight mode
+      if (query === lastSearchQuery && isFilterMode === lastSearchFilterMode && matchMarks.length > 0 && !isFilterMode) {
+        if (direction === 0) direction = 1; // Default Enter advances to next match
+        currentMatchIndex = (currentMatchIndex + direction + matchMarks.length) % matchMarks.length;
+        logSearchMatchCount.textContent = `${currentMatchIndex + 1} of ${matchMarks.length}`;
+        matchMarks.forEach((m, idx) => {
+          if (idx === currentMatchIndex) {
+            m.classList.add('active');
+            m.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } else {
+            m.classList.remove('active');
+          }
+        });
+        return;
+      }
+
+      lastSearchQuery = query;
+      lastSearchFilterMode = isFilterMode;
+
+      if (isFilterMode) {
+        const lines = currentRawLogText.split('\n');
+        const qLower = query.toLowerCase();
+        const matchedLines = lines.filter(l => l.toLowerCase().includes(qLower));
+        logSearchMatchCount.textContent = `${matchedLines.length} lines`;
+        viewer.textContent = matchedLines.join('\n');
+        matchMarks = [];
+        return;
+      }
+
+      const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedQuery})`, 'gi');
+      const parts = currentRawLogText.split(regex);
+      let matchCount = 0;
+      let html = '';
+
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].toLowerCase() === query.toLowerCase()) {
+          matchCount++;
+          html += `<mark class="search-highlight">${escapeHtml(parts[i])}</mark>`;
+        } else {
+          html += escapeHtml(parts[i]);
+        }
+      }
+
+      if (matchCount === 0) {
+        logSearchMatchCount.textContent = '0 matches';
+        viewer.textContent = currentRawLogText;
+        currentMatchIndex = -1;
+        matchMarks = [];
+        return;
+      }
+
+      currentMatchIndex = 0;
+      logSearchMatchCount.textContent = `1 of ${matchCount}`;
+      viewer.innerHTML = html;
+
+      matchMarks = Array.from(viewer.querySelectorAll('mark.search-highlight'));
+      if (matchMarks[0]) {
+        matchMarks[0].classList.add('active');
+        matchMarks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    logSearchBtn.addEventListener('click', () => {
+      const query = logSearchInput.value.trim();
+      performLogSearch(query === lastSearchQuery ? 1 : 0);
+    });
+
+    logSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const query = logSearchInput.value.trim();
+        performLogSearch(e.shiftKey ? -1 : (query === lastSearchQuery ? 1 : 0));
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        logSearchInput.value = '';
+        performLogSearch(0);
+      }
+    });
+
+    logSearchNext.addEventListener('click', () => performLogSearch(1));
+    logSearchPrev.addEventListener('click', () => performLogSearch(-1));
+    filterLinesCheckbox.addEventListener('change', () => performLogSearch(0));
+
+    wordWrapBtn.addEventListener('click', () => {
+      isWordWrap = !isWordWrap;
+      const viewer = document.getElementById('logContent');
+      viewer.classList.toggle('wrap', isWordWrap);
+      if (isWordWrap) {
+        wordWrapBtn.textContent = 'Wrap: On';
+        wordWrapBtn.classList.remove('btn-secondary');
+        wordWrapBtn.style.backgroundColor = 'var(--primary)';
+        wordWrapBtn.style.color = '#0f172a';
+        wordWrapBtn.style.fontWeight = '600';
+      } else {
+        wordWrapBtn.textContent = 'Wrap: Off';
+        wordWrapBtn.classList.add('btn-secondary');
+        wordWrapBtn.style.backgroundColor = '';
+        wordWrapBtn.style.color = '';
+        wordWrapBtn.style.fontWeight = 'normal';
+      }
+    });
+
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      renderTable();
+    });
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeFilter = btn.getAttribute('data-filter');
+        renderTable();
+      });
+    });
+  </script>
+</body>
+</html>

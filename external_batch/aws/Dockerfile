@@ -14,6 +14,7 @@ RUN apt-get update && \
     apt-get clean
 
 COPY runner/run_chunk.rb /usr/local/openstudio-batch/run_chunk.rb
+COPY demo/aggregate_csv.rb /usr/local/openstudio-batch/aggregate_csv.rb
 COPY aws/task_wrapper.sh /usr/local/openstudio-batch/task_wrapper.sh
 RUN chmod +x /usr/local/openstudio-batch/task_wrapper.sh
 

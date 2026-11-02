@@ -45,15 +45,15 @@ production:
 
 local-server:
   <<: *defaults
-  os_server_host_url: <%= ENV['OS_SERVER_HOST_URL'] %>
-  os_server_project_path: <%= ENV['OS_SERVER_PROJECT_PATH'] %>
-  rails_log_path: <%= ENV['OS_SERVER_LOG_PATH'] %>
-  rails_tmp_path: <%= ENV['OS_SERVER_RAILS_TMP_PATH'] %>
+  <% if ENV['OS_SERVER_HOST_URL'] %>os_server_host_url: <%= ENV['OS_SERVER_HOST_URL'] %><% end %>
+  <% if ENV['OS_SERVER_PROJECT_PATH'] %>os_server_project_path: '<%= ENV['OS_SERVER_PROJECT_PATH'] %>'<% end %>
+  <% if ENV['OS_SERVER_LOG_PATH'] %>rails_log_path: '<%= ENV['OS_SERVER_LOG_PATH'] %>'<% end %>
+  <% if ENV['OS_SERVER_RAILS_TMP_PATH'] %>rails_tmp_path: '<%= ENV['OS_SERVER_RAILS_TMP_PATH'] %>'<% end %>
 
 local-test:
   <<: *defaults
-  os_server_host_url: <%= ENV['OS_SERVER_HOST_URL'] %>
-  os_server_project_path: <%= ENV['OS_SERVER_PROJECT_PATH'] %>
-  rails_log_path: <%= ENV['OS_SERVER_LOG_PATH'] %>
-  rails_tmp_path: <%= ENV['OS_SERVER_RAILS_TMP_PATH'] %>
+  <% if ENV['OS_SERVER_HOST_URL'] %>os_server_host_url: <%= ENV['OS_SERVER_HOST_URL'] %><% end %>
+  <% if ENV['OS_SERVER_PROJECT_PATH'] %>os_server_project_path: '<%= ENV['OS_SERVER_PROJECT_PATH'] %>'<% end %>
+  <% if ENV['OS_SERVER_LOG_PATH'] %>rails_log_path: '<%= ENV['OS_SERVER_LOG_PATH'] %>'<% end %>
+  <% if ENV['OS_SERVER_RAILS_TMP_PATH'] %>rails_tmp_path: '<%= ENV['OS_SERVER_RAILS_TMP_PATH'] %>'<% end %>
 

@@ -74,20 +74,51 @@ module ExternalBatchHelpers
       case service
       when 's3'
         cmd = argv.shift
-        abort "unsupported s3 command \#{cmd}" unless cmd == 'sync'
-        delete = !argv.delete('--delete').nil?
-        argv.delete('--only-show-errors')
-        if (i = argv.index('--region'))
-          argv.slice!(i, 2)
+        case cmd
+        when 'sync'
+          delete = !argv.delete('--delete').nil?
+          argv.delete('--only-show-errors')
+          if (i = argv.index('--region'))
+            argv.slice!(i, 2)
+          end
+          src = resolve(argv[0], fake_root)
+          dst = resolve(argv[1], fake_root)
+          abort "sync source \#{src} does not exist" unless Dir.exist?(src)
+          FileUtils.rm_rf(dst) if delete
+          FileUtils.mkdir_p(dst)
+          FileUtils.cp_r(File.join(src, '.'), dst)
+        when 'cp'
+          argv.delete('--only-show-errors')
+          if (i = argv.index('--region'))
+            argv.slice!(i, 2)
+          end
+          src = resolve(argv[0], fake_root)
+          dst = resolve(argv[1], fake_root)
+          FileUtils.mkdir_p(File.dirname(dst))
+          FileUtils.cp(src, dst)
+        else
+          abort "unsupported s3 command \#{cmd}"
         end
-        src = resolve(argv[0], fake_root)
-        dst = resolve(argv[1], fake_root)
-        abort "sync source \#{src} does not exist" unless Dir.exist?(src)
-        FileUtils.rm_rf(dst) if delete
-        FileUtils.mkdir_p(dst)
-        FileUtils.cp_r(File.join(src, '.'), dst)
       when 'batch'
         puts 'fake-job-123'
+      when 'stepfunctions'
+        cmd = argv.shift
+        case cmd
+        when 'start-execution'
+          puts JSON.generate({
+            'executionArn' => 'arn:aws:states:us-east-1:123456789012:execution:osaf-batch-orchestrator:fake-exec-1',
+            'startDate' => Time.now.to_s
+          })
+        when 'describe-execution'
+          puts JSON.generate({
+            'executionArn' => 'arn:aws:states:us-east-1:123456789012:execution:osaf-batch-orchestrator:fake-exec-1',
+            'status' => 'SUCCEEDED',
+            'startDate' => Time.now.to_s,
+            'stopDate' => (Time.now + 10).to_s
+          })
+        else
+          abort "unsupported stepfunctions command \#{cmd}"
+        end
       else
         abort "unsupported service \#{service}"
       end

@@ -93,9 +93,9 @@ local-server:
 local-test:
   clients:
     default:
-      database: <%= ENV['OS_SERVER_DATABASE_NAME'] %>
+      database: <%= ENV['OS_SERVER_DATABASE_NAME'] || 'os_local_test' %>
       hosts:
-        - localhost:<%= ENV['OS_SERVER_MONGO_PORT'] %>
+        - 127.0.0.1:<%= ENV['OS_SERVER_MONGO_PORT'] || 27017 %>
       options:
         user: <%= ENV['MONGO_USER'] %>
         password: <%= ENV['MONGO_PASSWORD'] %>

@@ -16,7 +16,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.0"
     }
   }
 }
@@ -51,9 +51,9 @@ variable "max_vcpus" {
 }
 
 variable "container_memory_mb" {
-  description = "Memory per array task (one sim; ~8 GB rule of thumb, 7500 packs cleanly)"
+  description = "Memory per array task in MB (8192 MB = 8 GB for 1 vCPU)"
   type        = number
-  default     = 7500
+  default     = 8192
 }
 
 variable "runner_image_tag" {
@@ -80,6 +80,50 @@ variable "vpc_id" {
   default     = ""
 }
 
+# ------------------------------------ existing IAM / enterprise configuration
+
+variable "create_iam_and_security_group" {
+  description = "Whether to create IAM roles and security group. Set to false in restricted accounts where these are pre-provisioned."
+  type        = bool
+  default     = true
+}
+
+variable "existing_service_role_arn" {
+  description = "Existing Batch service role ARN (used when create_iam_and_security_group is false)"
+  type        = string
+  default     = ""
+}
+
+variable "existing_instance_role_arn" {
+  description = "Existing ECS instance profile ARN for EC2 (used when create_iam_and_security_group is false and compute_platform is EC2)"
+  type        = string
+  default     = ""
+}
+
+variable "existing_task_role_arn" {
+  description = "Existing ECS task role ARN for the runner container (used when create_iam_and_security_group is false)"
+  type        = string
+  default     = ""
+}
+
+variable "existing_execution_role_arn" {
+  description = "Existing ECS task execution role ARN (required for FARGATE image pull/logs)"
+  type        = string
+  default     = ""
+}
+
+variable "existing_security_group_ids" {
+  description = "Existing security group IDs (used when create_iam_and_security_group is false)"
+  type        = list(string)
+  default     = []
+}
+
+variable "compute_platform" {
+  description = "Compute platform: EC2 or FARGATE_SPOT / FARGATE"
+  type        = string
+  default     = "EC2"
+}
+
 # ------------------------------------------------------- default VPC fallback
 
 data "aws_vpc" "default" {
@@ -89,6 +133,17 @@ data "aws_vpc" "default" {
 
 locals {
   vpc_id = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.default[0].id
+
+  is_fargate = upper(var.compute_platform) == "FARGATE" || upper(var.compute_platform) == "FARGATE_SPOT"
+
+  service_role_arn  = var.create_iam_and_security_group ? aws_iam_role.batch_service[0].arn : var.existing_service_role_arn
+  instance_role_arn = local.is_fargate ? null : (var.create_iam_and_security_group ? aws_iam_instance_profile.ecs_instance[0].arn : var.existing_instance_role_arn)
+  task_role_arn     = var.create_iam_and_security_group ? aws_iam_role.task[0].arn : var.existing_task_role_arn
+  execution_role_arn = local.is_fargate ? var.existing_execution_role_arn : null
+
+  security_group_ids = var.create_iam_and_security_group ? [aws_security_group.batch[0].id] : (
+    length(var.existing_security_group_ids) > 0 ? var.existing_security_group_ids : []
+  )
 }
 
 data "aws_subnets" "default" {
@@ -132,6 +187,34 @@ resource "aws_s3_bucket_lifecycle_configuration" "batch" {
   }
 }
 
+resource "aws_s3_bucket_policy" "task_access" {
+  count  = local.task_role_arn != "" ? 1 : 0
+  bucket = aws_s3_bucket.batch.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowBatchTaskAccess"
+        Effect    = "Allow"
+        Principal = {
+          AWS = local.task_role_arn
+        }
+        Action = [
+          "s3:ListBucket",
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          aws_s3_bucket.batch.arn,
+          "${aws_s3_bucket.batch.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
 # ------------------------------------------------------------------------ ECR
 
 resource "aws_ecr_repository" "runner" {
@@ -141,11 +224,11 @@ resource "aws_ecr_repository" "runner" {
 }
 
 # ------------------------------------------------------------------------ IAM
-# Three-role topology; each scoped to exactly what that plane needs.
+# Optional role creation (skipped when create_iam_and_security_group is false)
 
-# 1. Batch service role (lets AWS Batch manage EC2/ECS on our behalf)
 resource "aws_iam_role" "batch_service" {
-  name = "${var.name_prefix}-service-role"
+  count = var.create_iam_and_security_group ? 1 : 0
+  name  = "${var.name_prefix}-service-role"
   assume_role_policy = jsonencode({
     Version   = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "batch.amazonaws.com" } }]
@@ -153,13 +236,14 @@ resource "aws_iam_role" "batch_service" {
 }
 
 resource "aws_iam_role_policy_attachment" "batch_service" {
-  role       = aws_iam_role.batch_service.name
+  count      = var.create_iam_and_security_group ? 1 : 0
+  role       = aws_iam_role.batch_service[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
 }
 
-# 2. ECS instance role (the EC2 hosts; pulls images, joins the ECS cluster)
 resource "aws_iam_role" "ecs_instance" {
-  name = "${var.name_prefix}-instance-role"
+  count = var.create_iam_and_security_group && !local.is_fargate ? 1 : 0
+  name  = "${var.name_prefix}-instance-role"
   assume_role_policy = jsonencode({
     Version   = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "ec2.amazonaws.com" } }]
@@ -167,18 +251,20 @@ resource "aws_iam_role" "ecs_instance" {
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_instance" {
-  role       = aws_iam_role.ecs_instance.name
+  count      = var.create_iam_and_security_group && !local.is_fargate ? 1 : 0
+  role       = aws_iam_role.ecs_instance[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
 }
 
 resource "aws_iam_instance_profile" "ecs_instance" {
-  name = "${var.name_prefix}-instance-profile"
-  role = aws_iam_role.ecs_instance.name
+  count = var.create_iam_and_security_group && !local.is_fargate ? 1 : 0
+  name  = "${var.name_prefix}-instance-profile"
+  role  = aws_iam_role.ecs_instance[0].name
 }
 
-# 3. Task role (what the runner containers can do: the run bucket, nothing else)
 resource "aws_iam_role" "task" {
-  name = "${var.name_prefix}-task-role"
+  count = var.create_iam_and_security_group ? 1 : 0
+  name  = "${var.name_prefix}-task-role"
   assume_role_policy = jsonencode({
     Version   = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "ecs-tasks.amazonaws.com" } }]
@@ -186,8 +272,9 @@ resource "aws_iam_role" "task" {
 }
 
 resource "aws_iam_role_policy" "task_s3" {
-  name = "${var.name_prefix}-task-s3"
-  role = aws_iam_role.task.id
+  count = var.create_iam_and_security_group ? 1 : 0
+  name  = "${var.name_prefix}-task-s3"
+  role  = aws_iam_role.task[0].id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -209,6 +296,7 @@ resource "aws_iam_role_policy" "task_s3" {
 # ---------------------------------------------------------------------- Batch
 
 resource "aws_security_group" "batch" {
+  count       = var.create_iam_and_security_group ? 1 : 0
   name        = "${var.name_prefix}-sg"
   description = "OSAF external batch compute (egress only)"
   vpc_id      = local.vpc_id
@@ -222,19 +310,18 @@ resource "aws_security_group" "batch" {
 }
 
 resource "aws_batch_compute_environment" "batch" {
-  compute_environment_name = "${var.name_prefix}-ce"
-  type                     = "MANAGED"
-  service_role             = aws_iam_role.batch_service.arn
-  depends_on               = [aws_iam_role_policy_attachment.batch_service]
+  name         = "${var.name_prefix}-ce"
+  type         = "MANAGED"
+  service_role = local.service_role_arn
 
   compute_resources {
-    type                = "EC2" # on-demand; switch to SPOT deliberately, not by default
-    allocation_strategy = "BEST_FIT_PROGRESSIVE"
-    instance_role       = aws_iam_instance_profile.ecs_instance.arn
-    instance_type       = ["m6idn", "m5d"] # d = local NVMe for E+ small-file I/O
-    min_vcpus           = 0
+    type                = local.is_fargate ? (upper(var.compute_platform) == "FARGATE_SPOT" ? "FARGATE_SPOT" : "FARGATE") : "EC2"
+    allocation_strategy = local.is_fargate ? null : "BEST_FIT_PROGRESSIVE"
+    instance_role       = local.instance_role_arn
+    instance_type       = local.is_fargate ? null : ["m6idn", "m5d"]
+    min_vcpus           = local.is_fargate ? null : 0
     max_vcpus           = var.max_vcpus
-    security_group_ids  = [aws_security_group.batch.id]
+    security_group_ids  = local.security_group_ids
     subnets             = local.subnet_ids
   }
 }
@@ -252,24 +339,35 @@ resource "aws_batch_job_queue" "batch" {
 resource "aws_batch_job_definition" "runner" {
   name                  = "${var.name_prefix}-runner"
   type                  = "container"
-  platform_capabilities = ["EC2"]
+  platform_capabilities = [local.is_fargate ? "FARGATE" : "EC2"]
 
   retry_strategy {
     attempts = 2 # chunk re-runs are idempotent (ingester skips completed dps)
   }
 
-  container_properties = jsonencode({
-    image      = "${aws_ecr_repository.runner.repository_url}:${var.runner_image_tag}"
-    jobRoleArn = aws_iam_role.task.arn
-    resourceRequirements = [
-      { type = "VCPU", value = "1" },
-      { type = "MEMORY", value = tostring(var.container_memory_mb) }
-    ]
-    environment = [
-      # BATCH_S3_URI is supplied per-run via submit-time container overrides
-      { name = "BATCH_S3_URI", value = "" }
-    ]
-  })
+  container_properties = jsonencode(merge(
+    {
+      image      = "${aws_ecr_repository.runner.repository_url}:${var.runner_image_tag}"
+      jobRoleArn = local.task_role_arn
+      resourceRequirements = [
+        { type = "VCPU", value = "1" },
+        { type = "MEMORY", value = tostring(var.container_memory_mb) }
+      ]
+      environment = [
+        # BATCH_S3_URI is supplied per-run via submit-time container overrides
+        { name = "BATCH_S3_URI", value = "" }
+      ]
+    },
+    jsondecode(local.is_fargate ? jsonencode({
+      executionRoleArn = local.execution_role_arn
+      fargatePlatformConfiguration = {
+        platformVersion = "LATEST"
+      }
+      networkConfiguration = {
+        assignPublicIp = "ENABLED"
+      }
+    }) : "{}")
+  ))
 }
 
 # -------------------------------------------------------------------- outputs

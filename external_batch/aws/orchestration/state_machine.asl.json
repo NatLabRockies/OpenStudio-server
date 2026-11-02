@@ -1,0 +1,219 @@
+{
+  "Comment": "OpenStudio Server AWS Batch Orchestration State Machine (Sync Array & Automated Cloud Finalizer)",
+  "StartAt": "ValidatePackage",
+  "States": {
+    "ValidatePackage": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.BatchS3Uri",
+          "IsPresent": true,
+          "Next": "CheckChunkCount"
+        }
+      ],
+      "Default": "FailInvalidInput"
+    },
+    "CheckChunkCount": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.NumChunks",
+          "NumericGreaterThan": 1,
+          "Next": "SubmitBatchArrayJob"
+        }
+      ],
+      "Default": "SubmitBatchSingleJob"
+    },
+    "SubmitBatchArrayJob": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::batch:submitJob.sync",
+      "Parameters": {
+        "JobName.$": "$.JobName",
+        "JobQueue.$": "$.JobQueue",
+        "JobDefinition.$": "$.JobDefinition",
+        "ArrayProperties": {
+          "Size.$": "$.NumChunks"
+        },
+        "ContainerOverrides": {
+          "Environment": [
+            {
+              "Name": "BATCH_S3_URI",
+              "Value.$": "$.BatchS3Uri"
+            }
+          ]
+        }
+      },
+      "ResultPath": "$.BatchJobResult",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Batch.ServerException",
+            "Batch.ClientException",
+            "States.Http.StatusCode.500",
+            "States.Http.StatusCode.503"
+          ],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.BatchError",
+          "Next": "EvaluateFailureThreshold"
+        }
+      ],
+      "Next": "EvaluateFailureThreshold"
+    },
+    "SubmitBatchSingleJob": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::batch:submitJob.sync",
+      "Parameters": {
+        "JobName.$": "$.JobName",
+        "JobQueue.$": "$.JobQueue",
+        "JobDefinition.$": "$.JobDefinition",
+        "ContainerOverrides": {
+          "Environment": [
+            {
+              "Name": "BATCH_S3_URI",
+              "Value.$": "$.BatchS3Uri"
+            },
+            {
+              "Name": "CHUNK_INDEX",
+              "Value": "0"
+            }
+          ]
+        }
+      },
+      "ResultPath": "$.BatchJobResult",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Batch.ServerException",
+            "Batch.ClientException",
+            "States.Http.StatusCode.500",
+            "States.Http.StatusCode.503"
+          ],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.BatchError",
+          "Next": "EvaluateFailureThreshold"
+        }
+      ],
+      "Next": "EvaluateFailureThreshold"
+    },
+    "EvaluateFailureThreshold": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.BatchJobResult.Status",
+          "StringEquals": "SUCCEEDED",
+          "Next": "RunFinalizer"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.AllowPartialFailure",
+              "BooleanEquals": true
+            },
+            {
+              "Variable": "$.BatchJobResult.Status",
+              "StringEquals": "FAILED"
+            }
+          ],
+          "Next": "RunFinalizer"
+        }
+      ],
+      "Default": "FailBatchExecution"
+    },
+    "RunFinalizer": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::batch:submitJob.sync",
+      "Parameters": {
+        "JobName.$": "States.Format('{}-finalizer', $.JobName)",
+        "JobQueue.$": "$.JobQueue",
+        "JobDefinition.$": "$.JobDefinition",
+        "ContainerOverrides": {
+          "Environment": [
+            {
+              "Name": "BATCH_S3_URI",
+              "Value.$": "$.BatchS3Uri"
+            },
+            {
+              "Name": "BATCH_TASK_MODE",
+              "Value": "finalize"
+            }
+          ]
+        }
+      },
+      "ResultPath": "$.FinalizerResult",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Batch.ServerException",
+            "States.Http.StatusCode.500",
+            "States.Http.StatusCode.503"
+          ],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Next": "CheckNotification"
+    },
+    "CheckNotification": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.SnsTopicArn",
+          "IsPresent": true,
+          "Next": "SendCompletionNotification"
+        }
+      ],
+      "Default": "ExecutionSucceeded"
+    },
+    "SendCompletionNotification": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn.$": "$.SnsTopicArn",
+        "Subject": "OpenStudio Batch Simulation Campaign Completed",
+        "Message": {
+          "AnalysisId.$": "$.AnalysisId",
+          "JobName.$": "$.JobName",
+          "BatchS3Uri.$": "$.BatchS3Uri",
+          "Status": "COMPLETED",
+          "BatchJobResult.$": "$.BatchJobResult",
+          "FinalizerResult.$": "$.FinalizerResult"
+        }
+      },
+      "ResultPath": "$.NotificationResult",
+      "Next": "ExecutionSucceeded"
+    },
+    "ExecutionSucceeded": {
+      "Type": "Pass",
+      "End": true
+    },
+    "FailInvalidInput": {
+      "Type": "Fail",
+      "Error": "InvalidInputError",
+      "Cause": "BatchS3Uri is required in the execution input."
+    },
+    "FailBatchExecution": {
+      "Type": "Fail",
+      "Error": "BatchJobFailed",
+      "Cause": "AWS Batch simulation array job failed or exceeded error budget."
+    }
+  }
+}
